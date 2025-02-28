@@ -25,7 +25,7 @@ const LocationMap = () => {
   const [destinationCoords, setDestinationCoords] = useState([18.5204, 73.8567]);
   const [distance, setDistance] = useState(null);
 
-  // Function to fetch location coordinates
+  // Fetch coordinates from location name
   const fetchCoordinates = async (location) => {
     try {
       const response = await fetch(
@@ -33,31 +33,62 @@ const LocationMap = () => {
       );
       const data = await response.json();
       if (data.length > 0) {
-        return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+        return {
+          coords: [parseFloat(data[0].lat), parseFloat(data[0].lon)],
+          placeDetails: data[0].display_name,
+        };
       }
     } catch (error) {
       console.error("Error fetching location:", error);
     }
-    return null; // Return null if not found
+    return null;
+  };
+
+  // Fetch place name (village, city, pin code) from coordinates
+  const fetchPlaceName = async (latitude, longitude) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+      );
+      const data = await response.json();
+
+      if (data && data.address) {
+        const { postcode, village, town, city, state } = data.address;
+        const placeName = `${village || town || city || state || "Unknown Place"} (${postcode || "No Pin"})`;
+        return placeName;
+      }
+    } catch (error) {
+      console.error("Error fetching place name:", error);
+    }
+    return "Unknown Location";
   };
 
   // Handle location search
   const handleSearch = async () => {
-    const startCoords = await fetchCoordinates(initialLocation);
-    const endCoords = await fetchCoordinates(destination);
+    const startData = await fetchCoordinates(initialLocation);
+    const endData = await fetchCoordinates(destination);
 
-    if (startCoords) setInitialCoords(startCoords);
-    if (endCoords) setDestinationCoords(endCoords);
+    if (startData) {
+      setInitialCoords(startData.coords);
+      setInitialLocation(await fetchPlaceName(startData.coords[0], startData.coords[1]));
+    }
+    if (endData) {
+      setDestinationCoords(endData.coords);
+      setDestination(await fetchPlaceName(endData.coords[0], endData.coords[1]));
+    }
   };
 
-  // Get user's current location
+  // Get user's current location and fetch village/town name
   const handleCurrentLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
           setInitialCoords([latitude, longitude]);
-          setInitialLocation("Your Location");
+
+          // Fetch place name using pin code
+          const placeName = await fetchPlaceName(latitude, longitude);
+          setInitialLocation(placeName);
         },
         (error) => console.error("Error fetching current location:", error),
         { enableHighAccuracy: true }
